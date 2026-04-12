@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.env
+venv/
+
+# Secrets — NEVER push these
+*.password
+secrets.txt
+.env.local
+
+# MySQL binlog files — too large
+mysql/data/
+*.sql.bak
+mysql-bin.*
+
+# Docker volumes
+docker/volumes/
+docker/data/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+*.err
+
+# Large data files
+*.parquet
+*.csv
+*.json.gz
