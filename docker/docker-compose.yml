@@ -1,9 +1,5 @@
-version: '3.8'
-
-# KRAFT MODE — NO ZOOKEEPER
-# Memory-optimised for 8GB RAM laptop
-# Control Center excluded (saves ~800MB)
-# 3 containers: Kafka (KRaft) + Schema Registry + Kafka Connect (Debezium)
+# CDC Pipeline — Single Container
+# Kafka runs in Redpanda Cloud
 
 networks:
   cdc-network:
@@ -11,115 +7,54 @@ networks:
 
 services:
 
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: cdc-kafka
-    networks:
-      - cdc-network
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      # ── KRaft mode settings (replaces ALL Zookeeper config) ──
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-
-      # ── Listeners ──
-      # PLAINTEXT      → internal Docker network (used by other containers)
-      # PLAINTEXT_HOST → external access from your Windows laptop
-      # CONTROLLER     → KRaft internal controller port
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-
-      # ── Topic defaults ──
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_NUM_PARTITIONS: 3
-      KAFKA_LOG_RETENTION_HOURS: 24
-      KAFKA_LOG_SEGMENT_BYTES: 104857600
-
-      # ── Memory tuning for 8GB RAM ──
-      KAFKA_HEAP_OPTS: "-Xmx1g -Xms512m"
-
-      # ── KRaft cluster ID (must be valid base64, do not change) ──
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-
-    deploy:
-      resources:
-        limits:
-          memory: 1500m
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.5.0
-    container_name: cdc-schema-registry
-    networks:
-      - cdc-network
-    depends_on:
-      kafka:
-        condition: service_healthy
-    ports:
-      - "8081:8081"
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-      SCHEMA_REGISTRY_HEAP_OPTS: "-Xmx256m -Xms128m"
-    deploy:
-      resources:
-        limits:
-          memory: 400m
-    restart: unless-stopped
-
   kafka-connect:
     image: debezium/connect:2.4
     container_name: cdc-kafka-connect
     networks:
       - cdc-network
-    depends_on:
-      kafka:
-        condition: service_healthy
-      schema-registry:
-        condition: service_started
     ports:
       - "8083:8083"
     environment:
-      BOOTSTRAP_SERVERS: kafka:9092
+      # Point to Redpanda Cloud instead of local Kafka
+      BOOTSTRAP_SERVERS: "d7ect2ugq0q78n6tk3cg.any.ap-south-1.mpx.prd.cloud.redpanda.com:9092"
+
       GROUP_ID: cdc-connect-group
       CONFIG_STORAGE_TOPIC: connect-configs
       OFFSET_STORAGE_TOPIC: connect-offsets
       STATUS_STORAGE_TOPIC: connect-statuses
-      CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONFIG_STORAGE_REPLICATION_FACTOR: "3"
+      OFFSET_STORAGE_REPLICATION_FACTOR: "3"
+      STATUS_STORAGE_REPLICATION_FACTOR: "3"
+
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "3"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "3"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "3"
+
+      # SASL/SSL auth for Redpanda Cloud
+      CONNECT_SECURITY_PROTOCOL: SASL_SSL
+      CONNECT_SASL_MECHANISM: SCRAM-SHA-256
+      CONNECT_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="debezium-user" password="debezium2026";'
+
+      CONNECT_PRODUCER_SECURITY_PROTOCOL: SASL_SSL
+      CONNECT_PRODUCER_SASL_MECHANISM: SCRAM-SHA-256
+      CONNECT_PRODUCER_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="debezium-user" password="debezium2026";'
+
+      CONNECT_CONSUMER_SECURITY_PROTOCOL: SASL_SSL
+      CONNECT_CONSUMER_SASL_MECHANISM: SCRAM-SHA-256
+      CONNECT_CONSUMER_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="debezium-user" password="debezium2026";'
+
       CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      # Memory tuning
-      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
-      # Allows Kafka Connect to reach MySQL running natively on your laptop
-      # Windows/Mac: host.docker.internal works automatically
-      # Linux: uses host-gateway (configured in extra_hosts below)
+
+      KAFKA_HEAP_OPTS: "-Xmx768m -Xms384m"
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
     deploy:
       resources:
         limits:
-          memory: 800m
+          memory: 1000m
     restart: unless-stopped
-
-# NOTE: No Zookeeper — KRaft handles all metadata internally
-# NOTE: Control Center excluded to save ~800MB RAM
-# Use CLI commands in Phase 9 to monitor instead
