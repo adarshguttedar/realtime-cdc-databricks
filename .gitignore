@@ -3,13 +3,15 @@ __pycache__/
 *.py[cod]
 .env
 venv/
+.venv/
 
-# Secrets — NEVER push these
+# Secrets — NEVER push passwords
 *.password
 secrets.txt
 .env.local
+redpanda_credentials.txt
 
-# MySQL binlog files — too large
+# MySQL binlog files
 mysql/data/
 *.sql.bak
 mysql-bin.*
@@ -17,6 +19,10 @@ mysql-bin.*
 # Docker volumes
 docker/volumes/
 docker/data/
+
+# Databricks
+.databricks/
+*.dbc
 
 # OS files
 .DS_Store
